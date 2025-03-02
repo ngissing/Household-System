@@ -1,5 +1,8 @@
+let isInitialized = false;
+
 // Google Calendar API integration
 export async function initGoogleCalendar() {
+  if (isInitialized) return;
   const CLIENT_ID =
     "1034425721932-rvf0iu4aq9aqhqjmqk7jv4t7k8ub5u7s.apps.googleusercontent.com";
   const API_KEY = "AIzaSyDqxjqjEBKCK1vg-iDfHQdxYVLrGhHUoYk";
@@ -61,6 +64,7 @@ export async function initGoogleCalendar() {
       });
 
       resolve(window.gapi);
+      isInitialized = true;
     };
 
     // Execute the sequence

@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -72,6 +73,9 @@ export default function EditFamilyMemberDialog({
         )}
       </DialogTrigger>
       <DialogContent className="sm:max-w-[425px]">
+        <DialogDescription>
+          {member ? "Edit family member details" : "Add a new family member"}
+        </DialogDescription>
         <DialogHeader>
           <DialogTitle>
             {member ? "Edit Family Member" : "Add Family Member"}

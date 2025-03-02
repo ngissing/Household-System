@@ -9,9 +9,8 @@ import {
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
-import { Calendar } from "./ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
-import { CalendarIcon, Plus } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Plus } from "lucide-react";
 import { format } from "date-fns";
 import {
   Select,
@@ -27,7 +26,7 @@ interface AddChoreDialogProps {
     description: string;
     assignedTo: string;
     points: number;
-    dueDate: Date;
+    isDefault: boolean;
   }) => void;
   familyMembers: Array<{ id: string; name: string }>;
 }
@@ -41,18 +40,15 @@ export default function AddChoreDialog({
   const [description, setDescription] = useState("");
   const [assignedTo, setAssignedTo] = useState("");
   const [points, setPoints] = useState("");
-  const [dueDate, setDueDate] = useState<Date>();
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title || !assignedTo || !points || !dueDate) return;
+    if (!title || !assignedTo || !points) return;
 
     onAddChore({
       title,
       description,
       assignedTo,
       points: parseInt(points),
-      dueDate,
     });
 
     setOpen(false);
@@ -60,7 +56,6 @@ export default function AddChoreDialog({
     setDescription("");
     setAssignedTo("");
     setPoints("");
-    setDueDate(undefined);
   };
 
   return (
@@ -122,28 +117,7 @@ export default function AddChoreDialog({
               required
             />
           </div>
-          <div className="space-y-2">
-            <Label>Due Date</Label>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start text-left font-normal"
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {dueDate ? format(dueDate, "PPP") : <span>Pick a date</span>}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <Calendar
-                  mode="single"
-                  selected={dueDate}
-                  onSelect={setDueDate}
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
-          </div>
+
           <Button type="submit" className="w-full">
             Add Chore
           </Button>

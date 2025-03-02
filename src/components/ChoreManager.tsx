@@ -1,109 +1,282 @@
 import { useState, useEffect } from "react";
-import { Calendar as CalendarIcon, ListTodo } from "lucide-react";
+import { Calendar as CalendarIcon } from "lucide-react";
 import AddRoutineDialog from "./AddRoutineDialog";
 import { Button } from "./ui/button";
 import AddChoreDialog from "./AddChoreDialog";
 import CalendarWidget from "./CalendarWidget";
 import FamilyMemberColumn from "./FamilyMemberColumn";
-import { addChoreToCalendar, getCalendarEvents } from "../lib/google-calendar";
+import { initGoogleCalendar } from "../lib/google-calendar";
+import { supabase } from "@/lib/supabase";
+import { calculateLevelInfo } from "@/lib/levels";
+import type { Chore, FamilyMember } from "@/lib/types";
 
 interface Routine {
   id: string;
   title: string;
   description?: string;
+  assignedTo: string;
   chores: {
     title: string;
     points: number;
   }[];
 }
 
-export interface Chore {
-  id: string;
-  title: string;
-  description?: string;
-  assignedTo: string;
-  points: number;
-  dueDate: string;
-  status: "pending" | "completed";
-}
-
-const FAMILY_MEMBERS = [
-  {
-    id: "1",
-    name: "Dad",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Dad",
-  },
-  {
-    id: "2",
-    name: "Lacey",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Lacey",
-  },
-  {
-    id: "3",
-    name: "Mikey",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Mikey",
-  },
-  {
-    id: "4",
-    name: "Mom",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Mom",
-  },
-];
-
 export default function ChoreManager() {
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [chores, setChores] = useState<Chore[]>([]);
+  const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [showCalendar, setShowCalendar] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<Date>();
-  const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [calendarEvents, setCalendarEvents] = useState<
+    { date: Date; count: number }[]
+  >([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (selectedDate) {
-      const timeMin = new Date(selectedDate);
-      timeMin.setHours(0, 0, 0, 0);
-      const timeMax = new Date(selectedDate);
-      timeMax.setHours(23, 59, 59, 999);
+    // Initialize Google Calendar
+    initGoogleCalendar().catch(console.error);
 
-      getCalendarEvents(timeMin, timeMax)
-        .then(setCalendarEvents)
-        .catch(console.error);
-    }
+    fetchFamilyMembers();
+    fetchChores(selectedDate);
+    updateCalendarEvents();
+
+    // Subscribe to realtime changes
+    const channel = supabase
+      .channel("chores_changes")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "chores" },
+        () => {
+          fetchChores(selectedDate);
+          updateCalendarEvents();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [selectedDate]);
+
+  const fetchFamilyMembers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("family_members")
+        .select("*")
+        .order("created_at", { ascending: true });
+
+      if (error) throw error;
+      setFamilyMembers(data || []);
+    } catch (error) {
+      console.error("Error fetching family members:", error);
+    }
+  };
+
+  const updateCalendarEvents = async () => {
+    try {
+      const { data, error } = await supabase.from("chores").select("due_date");
+
+      if (error) throw error;
+
+      // Group chores by date
+      const eventCounts = (data || []).reduce(
+        (acc, chore) => {
+          const date = new Date(chore.due_date);
+          const dateStr = date.toDateString();
+          acc[dateStr] = (acc[dateStr] || 0) + 1;
+          return acc;
+        },
+        {} as Record<string, number>,
+      );
+
+      // Convert to calendar events format
+      const events = Object.entries(eventCounts).map(([dateStr, count]) => ({
+        date: new Date(dateStr),
+        count,
+      }));
+
+      setCalendarEvents(events);
+    } catch (error) {
+      console.error("Error fetching calendar events:", error);
+    }
+  };
+
+  const fetchChores = async (date?: Date) => {
+    const targetDate = date || selectedDate;
+    const startOfDay = new Date(targetDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(targetDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    try {
+      // Get all chores for the selected date
+      const { data: dateChores, error: dateError } = await supabase
+        .from("chores")
+        .select("*")
+        .gte("due_date", startOfDay.toISOString())
+        .lte("due_date", endOfDay.toISOString());
+
+      if (dateError) throw dateError;
+
+      // Only create routine chores for today or future dates
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      if (targetDate >= now) {
+        // Get all routines that are active for this day of the week
+        const { data: routines, error: routinesError } = await supabase
+          .from("routines")
+          .select("*, routine_chores(*)")
+          .contains("active_days", [targetDate.getDay()]);
+
+        if (routinesError) throw routinesError;
+
+        // Filter out routine chores that already exist for this date
+        const existingRoutineKeys = new Set(
+          dateChores
+            ?.filter((c) => c.routine_id)
+            .map((c) => `${c.routine_id}-${c.title}`),
+        );
+
+        const choresToCreate = [];
+        routines?.forEach((routine) => {
+          if (!routine.routine_chores) return;
+          routine.routine_chores.forEach((chore: any) => {
+            if (!existingRoutineKeys.has(`${routine.id}-${chore.title}`)) {
+              choresToCreate.push({
+                title: chore.title,
+                description: routine.description,
+                assigned_to: routine.assigned_to,
+                points: chore.points,
+                status: "pending",
+                routine_id: routine.id,
+                routine_title: routine.title,
+                due_date: targetDate.toISOString(),
+              });
+            }
+          });
+        });
+
+        if (choresToCreate.length > 0) {
+          const { data: insertedChores, error: insertError } = await supabase
+            .from("chores")
+            .insert(choresToCreate)
+            .select();
+
+          if (insertError) throw insertError;
+          if (insertedChores) {
+            setChores([...(dateChores || []), ...insertedChores]);
+          } else {
+            setChores(dateChores || []);
+          }
+          return;
+        }
+      }
+
+      setChores(dateChores || []);
+    } catch (error) {
+      console.error("Error fetching chores:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleAddChore = async (newChore: {
     title: string;
     description: string;
     assignedTo: string;
     points: number;
-    dueDate: Date;
+    isDefault: boolean;
+    routineId?: string;
+    routineTitle?: string;
   }) => {
-    const chore: Chore = {
-      id: crypto.randomUUID(),
-      ...newChore,
-      dueDate: newChore.dueDate.toISOString(),
-      status: "pending",
-    };
-
-    setChores((prev) => [...prev, chore]);
-
     try {
-      await addChoreToCalendar({
-        title: `${chore.title} (${FAMILY_MEMBERS.find((m) => m.id === chore.assignedTo)?.name})`,
-        description: chore.description,
-        dueDate: new Date(chore.dueDate),
-      });
+      const { data, error } = await supabase
+        .from("chores")
+        .insert({
+          title: newChore.title,
+          description: newChore.description,
+          assigned_to: newChore.assignedTo,
+          points: newChore.points,
+          routine_id: newChore.routineId,
+          routine_title: newChore.routineTitle,
+          status: "pending",
+          is_default: newChore.isDefault,
+          due_date: selectedDate.toISOString(),
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Update local state immediately
+      if (data) {
+        setChores((prevChores) => [data, ...prevChores]);
+        updateCalendarEvents();
+      }
     } catch (error) {
-      console.error("Failed to add chore to calendar:", error);
+      console.error("Error adding chore:", error);
     }
   };
 
-  const handleCompleteChore = (id: string) => {
-    setChores((prev) =>
-      prev.map((chore) =>
-        chore.id === id ? { ...chore, status: "completed" } : chore,
-      ),
-    );
+  const handleCompleteChore = async (id: string) => {
+    try {
+      const chore = chores.find((c) => c.id === id);
+      if (!chore) return;
+
+      const newStatus = chore.status === "completed" ? "pending" : "completed";
+
+      // Update local state immediately
+      setChores((prevChores) =>
+        prevChores.map((c) => (c.id === id ? { ...c, status: newStatus } : c)),
+      );
+
+      const { error } = await supabase
+        .from("chores")
+        .update({ status: newStatus })
+        .eq("id", id);
+
+      if (error) throw error;
+
+      // Update family member points
+      if (chore) {
+        // First get current points
+        const { data: memberData, error: memberError } = await supabase
+          .from("family_members")
+          .select("points")
+          .eq("id", chore.assigned_to)
+          .single();
+
+        if (memberError) throw memberError;
+
+        // Then update with new points - add points if completing, subtract if uncompleting
+        const pointChange =
+          newStatus === "completed" ? chore.points : -chore.points;
+        const newPoints = (memberData?.points || 0) + pointChange;
+        const { level, progress } = calculateLevelInfo(newPoints);
+
+        const { error: pointsError } = await supabase
+          .from("family_members")
+          .update({
+            points: newPoints,
+            level,
+            progress,
+          })
+          .eq("id", chore.assigned_to);
+
+        if (pointsError) throw pointsError;
+      }
+    } catch (error) {
+      console.error("Error toggling chore:", error);
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-48">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="w-full h-full bg-white p-6 rounded-lg shadow-lg">
@@ -124,32 +297,32 @@ export default function ChoreManager() {
                 setRoutines([...routines, { ...routine, id: routineId }]);
 
                 // Add all chores from the routine
-                const now = new Date();
                 routine.chores.forEach((chore) => {
                   handleAddChore({
                     title: chore.title,
-                    description: routine.description,
+                    description: routine.description || "",
                     assignedTo: routine.assignedTo,
                     points: chore.points,
-                    dueDate: now,
+                    routine_template: false,
+                    routineId: routineId,
+                    routineTitle: routine.title,
                   });
                 });
               }}
-              familyMembers={FAMILY_MEMBERS}
+              familyMembers={familyMembers}
             />
             <AddChoreDialog
               onAddChore={handleAddChore}
-              familyMembers={FAMILY_MEMBERS}
-              routines={routines}
+              familyMembers={familyMembers}
             />
           </div>
         </div>
       </div>
 
-      <div className="flex gap-8 overflow-x-auto pb-6">
-        {FAMILY_MEMBERS.map((member) => {
+      <div className="flex gap-4 overflow-x-auto pb-6 snap-x">
+        {familyMembers.map((member) => {
           const memberChores = chores.filter(
-            (chore) => chore.assignedTo === member.id,
+            (chore) => chore.assigned_to === member.id,
           );
           const completedCount = memberChores.filter(
             (chore) => chore.status === "completed",
@@ -163,7 +336,8 @@ export default function ChoreManager() {
               chores={memberChores.map((chore) => ({
                 id: chore.id,
                 title: chore.title,
-                dueDate: chore.dueDate,
+                routineId: chore.routine_id,
+                routineTitle: chore.routine_title,
                 completed: chore.status === "completed",
               }))}
               completedCount={completedCount}
@@ -178,11 +352,11 @@ export default function ChoreManager() {
         <div className="mt-6">
           <CalendarWidget
             selectedDate={selectedDate}
-            onSelect={setSelectedDate}
-            events={calendarEvents.map((event) => ({
-              date: new Date(event.start.dateTime || event.start.date),
-              count: 1,
-            }))}
+            onSelect={(date) => {
+              setSelectedDate(date || new Date());
+              fetchChores(date || new Date());
+            }}
+            events={calendarEvents}
           />
         </div>
       )}

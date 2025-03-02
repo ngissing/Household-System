@@ -31,10 +31,14 @@ export default function CalendarWidget({
               events.some(
                 (event) => event.date.toDateString() === date.toDateString(),
               ),
+            selected: (date) =>
+              selectedDate?.toDateString() === date.toDateString(),
           }}
           modifiersStyles={{
             event: {
               fontWeight: "bold",
+            },
+            selected: {
               backgroundColor: "hsl(var(--primary))",
               color: "white",
             },

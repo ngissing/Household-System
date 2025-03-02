@@ -10,6 +10,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Plus, X } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 import {
   Select,
   SelectContent,
@@ -54,22 +55,61 @@ export default function AddRoutineDialog({
     setChores(chores.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title || !assignedTo || chores.length === 0) return;
 
-    onAddRoutine({
-      title,
-      description,
-      assignedTo,
-      chores,
-    });
+    try {
+      // First create the routine record
+      const { data: routineData, error: routineError } = await supabase
+        .from("routines")
+        .insert({
+          title,
+          description,
+          assigned_to: assignedTo,
+        })
+        .select()
+        .single();
 
-    setOpen(false);
-    setTitle("");
-    setDescription("");
-    setAssignedTo("");
-    setChores([]);
+      if (routineError) throw routineError;
+      if (!routineData) throw new Error("No routine data returned");
+
+      // Then create template chores for this routine
+      const templateChores = chores.map((chore) => ({
+        title: chore.title,
+        description,
+        assigned_to: assignedTo,
+        points: chore.points,
+        routine_id: routineData.id,
+        routine_title: title,
+        routine_template: true,
+        status: "pending",
+        due_date: new Date().toISOString(),
+      }));
+
+      const { error: choresError } = await supabase
+        .from("chores")
+        .insert(templateChores);
+
+      if (choresError) throw choresError;
+
+      // Call the onAddRoutine callback
+      onAddRoutine({
+        title,
+        description,
+        assignedTo,
+        chores,
+      });
+
+      // Reset form
+      setOpen(false);
+      setTitle("");
+      setDescription("");
+      setAssignedTo("");
+      setChores([]);
+    } catch (error) {
+      console.error("Error creating routine:", error);
+    }
   };
 
   return (
