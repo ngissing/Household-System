@@ -1,13 +1,14 @@
-import { Suspense, useEffect } from "react";
+import { Suspense } from "react"; // Removed useEffect
 import { useRoutes, Routes, Route, Navigate } from "react-router-dom";
 import Home from "./components/home";
+// @ts-ignore
 import routes from "tempo-routes";
-import { initGoogleCalendar } from "./lib/google-calendar";
+// import { initGoogleCalendar } from "./lib/google-calendar"; // Removed
 
 function App() {
-  useEffect(() => {
-    initGoogleCalendar().catch(console.error);
-  }, []);
+  // useEffect(() => { // Removed useEffect
+  //   initGoogleCalendar().catch(console.error);
+  // }, []);
   return (
     <Suspense fallback={<p>Loading...</p>}>
       {/* Tempo routes need to be before other routes */}

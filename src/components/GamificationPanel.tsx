@@ -26,6 +26,7 @@ export default function GamificationPanel({
   const [totalPoints, setTotalPoints] = useState(0);
   const [currentLevel, setCurrentLevel] = useState(1);
   const [redeemedRewards, setRedeemedRewards] = useState<string[]>([]);
+  const [purchasedRewards, setPurchasedRewards] = useState<string[]>([]);
 
   useEffect(() => {
     if (propRewards && propRewards.length > 0) {
@@ -42,6 +43,14 @@ export default function GamificationPanel({
     );
     if (storedRedeemedRewards) {
       setRedeemedRewards(JSON.parse(storedRedeemedRewards));
+    }
+
+    // Load purchased rewards
+    const purchasedRewardsStr = localStorage.getItem(
+      "familyTaskPurchasedRewards",
+    );
+    if (purchasedRewardsStr) {
+      setPurchasedRewards(JSON.parse(purchasedRewardsStr));
     }
   }, [propRewards]);
 
@@ -233,17 +242,23 @@ export default function GamificationPanel({
                 )
                 .map((reward) => {
                   const isRedeemed = redeemedRewards.includes(reward.id);
+                  const isPurchased = purchasedRewards.includes(reward.id);
                   return (
                     <Card
                       key={reward.id}
-                      className={`p-4 ${isRedeemed ? "bg-muted/50 border-dashed" : ""}`}
+                      className={`p-4 ${isRedeemed ? "bg-muted/50 border-dashed" : ""} ${isPurchased ? "border-green-500 border-2" : ""}`}
                     >
+                      {isPurchased && (
+                        <div className="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-1 rounded-full">
+                          Purchased
+                        </div>
+                      )}
                       <div className="flex flex-col items-center text-center space-y-2">
                         <span className="text-4xl">{reward.icon}</span>
                         <h3 className="font-semibold">{reward.title}</h3>
                         <div className="flex items-center gap-1 text-yellow-500">
                           <Star className="h-4 w-4 fill-current" />
-                          <span>{reward.points} points</span>
+                          <span>${reward.points}</span>
                         </div>
                         {reward.minLevel && reward.minLevel > 1 && (
                           <div className="text-xs text-muted-foreground">
@@ -267,6 +282,29 @@ export default function GamificationPanel({
                               ? "Redeem"
                               : "Not enough points"}
                           </Button>
+                        )}
+
+                        {/* Link to settings to add more rewards */}
+                        {rewards.length <= 3 && (
+                          <div className="text-xs text-center mt-2 text-muted-foreground">
+                            <a
+                              href="#"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                // Navigate to settings tab using the parent component's tabs
+                                const mainTabs =
+                                  document.getElementById("main-tabs");
+                                const settingsTab =
+                                  mainTabs?.querySelector('[value="settings"]');
+                                if (settingsTab instanceof HTMLElement) {
+                                  settingsTab.click();
+                                }
+                              }}
+                              className="text-primary hover:underline"
+                            >
+                              Add more rewards in Settings
+                            </a>
+                          </div>
                         )}
                       </div>
                     </Card>

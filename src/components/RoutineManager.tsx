@@ -5,12 +5,24 @@ import { Button } from "./ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription, // Import DialogDescription
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import {
+  AlertDialog,         // Import AlertDialog components
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "./ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -27,6 +39,7 @@ interface Routine {
   description?: string;
   assigned_to: string;
   active_days: number[];
+  color?: string | null; // Add color property
   chores: Array<{
     id: string;
     title: string;
@@ -84,6 +97,7 @@ export default function RoutineManager({
           return {
             ...routine,
             active_days: routine.active_days || [],
+            color: routine.color || null, // Fetch color
             chores: choresData || [],
           };
         }),
@@ -116,6 +130,7 @@ export default function RoutineManager({
             description: editingRoutine.description,
             assigned_to: editingRoutine.assigned_to,
             active_days,
+            color: editingRoutine.color, // Add color to update
           })
           .eq("id", editingRoutine.id);
 
@@ -135,6 +150,7 @@ export default function RoutineManager({
             description: editingRoutine.description,
             assigned_to: editingRoutine.assigned_to,
             active_days,
+            color: editingRoutine.color, // Add color to insert
           })
           .select()
           .single();
@@ -168,8 +184,35 @@ export default function RoutineManager({
 
   const handleDeleteRoutine = async (id: string) => {
     try {
-      const { error } = await supabase.from("routines").delete().eq("id", id);
-      if (error) throw error;
+      // 1. Nullify routine_id and routine_title in the main 'chores' table
+      const { error: updateChoresError } = await supabase
+        .from("chores")
+        .update({ routine_id: null, routine_title: null })
+        .eq("routine_id", id);
+
+      if (updateChoresError) throw updateChoresError;
+
+      // 2. Delete associated routine_chores (templates)
+      const { error: deleteTemplateChoresError } = await supabase
+        .from("routine_chores")
+        .delete()
+        .eq("routine_id", id);
+
+      // We might not strictly need to throw here if templates don't exist,
+      // but it's good practice to check. Log it at least.
+      if (deleteTemplateChoresError) {
+        console.warn("Error deleting routine template chores:", deleteTemplateChoresError);
+      }
+
+      // 3. Delete the routine itself
+      const { error: deleteRoutineError } = await supabase
+        .from("routines")
+        .delete()
+        .eq("id", id);
+
+      if (deleteRoutineError) throw deleteRoutineError;
+
+      // 4. Refresh the list
       await fetchRoutines();
     } catch (error) {
       console.error("Error deleting routine:", error);
@@ -189,6 +232,7 @@ export default function RoutineManager({
                 description: "",
                 assigned_to: "",
                 active_days: [],
+                color: "#ffffff", // Default color for new routine
                 chores: [{ id: "", title: "", points: 0 }],
               });
               setIsDialogOpen(true);
@@ -233,25 +277,48 @@ export default function RoutineManager({
                       ))}
                     </div>
                   </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => {
-                        setEditingRoutine(routine);
-                        setIsDialogOpen(true);
-                      }}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleDeleteRoutine(routine.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  {/* Wrap buttons in AlertDialog for delete confirmation */}
+                  <AlertDialog>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setEditingRoutine(routine);
+                          setIsDialogOpen(true);
+                        }}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </AlertDialogTrigger>
+                    </div>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This action cannot be undone. This will permanently delete the routine "{routine.title}" and all its associated template chores.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        {/* Call handleDeleteRoutine on confirm */}
+                        <AlertDialogAction
+                          onClick={() => handleDeleteRoutine(routine.id)}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          Delete Routine
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </div>
               </CardContent>
             </Card>
@@ -264,13 +331,17 @@ export default function RoutineManager({
               <DialogTitle>
                 {editingRoutine?.id ? "Edit" : "Create"} Routine
               </DialogTitle>
+              {/* Add DialogDescription for accessibility */}
+              <DialogDescription>
+                {editingRoutine?.id ? "Update the details for this routine." : "Create a new routine for your household."}
+              </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSaveRoutine} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="title">Routine Name</Label>
                 <Input
                   id="title"
-                  value={editingRoutine?.title}
+                  value={editingRoutine?.title || ''} // Ensure value is never undefined
                   onChange={(e) =>
                     setEditingRoutine((prev) =>
                       prev ? { ...prev, title: e.target.value } : null,
@@ -303,6 +374,21 @@ export default function RoutineManager({
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="color">Routine Color</Label>
+                <Input
+                  id="color"
+                  type="color"
+                  value={editingRoutine?.color || "#ffffff"} // Use default if null/undefined
+                  onChange={(e) =>
+                    setEditingRoutine((prev) =>
+                      prev ? { ...prev, color: e.target.value } : null,
+                    )
+                  }
+                  className="w-full h-10 p-1"
+                />
               </div>
 
               <div className="space-y-2">
@@ -345,7 +431,7 @@ export default function RoutineManager({
                   {editingRoutine?.chores?.map((chore, index) => (
                     <div key={index} className="flex items-center gap-2">
                       <Input
-                        value={chore.title}
+                        value={chore.title || ''} // Ensure value is never undefined
                         onChange={(e) =>
                           setEditingRoutine((prev) =>
                             prev
@@ -364,7 +450,7 @@ export default function RoutineManager({
                       />
                       <Input
                         type="number"
-                        value={chore.points}
+                        value={chore.points || 0} // Ensure value is never undefined (use 0 as default)
                         onChange={(e) =>
                           setEditingRoutine((prev) =>
                             prev

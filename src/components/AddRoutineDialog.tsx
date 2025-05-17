@@ -25,6 +25,7 @@ interface AddRoutineDialogProps {
     description: string;
     assignedTo: string;
     chores: { title: string; points: number }[];
+    color?: string; // Add color to the prop type (optional for now)
   }) => void;
   familyMembers: Array<{ id: string; name: string }>;
 }
@@ -40,6 +41,7 @@ export default function AddRoutineDialog({
   const [chores, setChores] = useState<{ title: string; points: number }[]>([]);
   const [newChoreTitle, setNewChoreTitle] = useState("");
   const [newChorePoints, setNewChorePoints] = useState("");
+  const [color, setColor] = useState("#ffffff"); // Add state for color, default to white
 
   const handleAddChore = () => {
     if (!newChoreTitle || !newChorePoints) return;
@@ -67,6 +69,7 @@ export default function AddRoutineDialog({
           title,
           description,
           assigned_to: assignedTo,
+          color: color, // Add color to the insert object
         })
         .select()
         .single();
@@ -99,6 +102,7 @@ export default function AddRoutineDialog({
         description,
         assignedTo,
         chores,
+        color, // Pass color back (optional)
       });
 
       // Reset form
@@ -107,6 +111,7 @@ export default function AddRoutineDialog({
       setDescription("");
       setAssignedTo("");
       setChores([]);
+      setColor("#ffffff"); // Reset color state
     } catch (error) {
       console.error("Error creating routine:", error);
     }
@@ -157,6 +162,16 @@ export default function AddRoutineDialog({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Evening tasks before bed"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="color">Routine Color</Label>
+            <Input
+              id="color"
+              type="color"
+              value={color}
+              onChange={(e) => setColor(e.target.value)}
+              className="w-full h-10 p-1" // Adjust styling for color input
             />
           </div>
 
