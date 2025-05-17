@@ -10,6 +10,8 @@ import {
 import { Calendar } from "lucide-react";
 import { GOOGLE_CLIENT_ID, initGoogleCalendar } from "@/lib/google-calendar"; // Import Client ID and init function
 
+const GOOGLE_TOKEN_STORAGE_KEY = 'googleApiToken'; // Key for localStorage
+
 interface GoogleCalendarSetupProps {
   error?: string;
 }
@@ -75,9 +77,11 @@ export default function GoogleCalendarSetup({
             console.log("Access token received:", tokenResponse.access_token);
             // Set the token for the GAPI client to use
             if (window.gapi && window.gapi.client) {
-              window.gapi.client.setToken({ access_token: tokenResponse.access_token });
+              window.gapi.client.setToken(tokenResponse); // Pass the whole tokenResponse
+              // Store the entire tokenResponse in localStorage
+              localStorage.setItem(GOOGLE_TOKEN_STORAGE_KEY, JSON.stringify(tokenResponse));
               setIsConnected(true); // Update connection status
-              console.log("GAPI client token set. State updated, no reload.");
+              console.log("GAPI client token set and tokenResponse stored in localStorage. State updated, no reload.");
               // REMOVED: window.location.reload();
               // The CalendarPage should react to the new isConnected state or re-check GAPI token.
             } else {
@@ -108,6 +112,9 @@ export default function GoogleCalendarSetup({
       window.gapi.client.setToken(null);
       console.log('GAPI client token cleared.');
     }
+    // Remove the token from localStorage
+    localStorage.removeItem(GOOGLE_TOKEN_STORAGE_KEY);
+    console.log('Google API token removed from localStorage.');
 
     // Update UI state to reflect disconnection
     setIsConnected(false);

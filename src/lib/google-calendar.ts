@@ -1,4 +1,7 @@
 let isInitialized = false;
+let isTokenSetAttempted = false; // New flag to track if we've tried to set token from storage
+
+const GOOGLE_TOKEN_STORAGE_KEY = 'googleApiToken'; // Key for localStorage
 
 // Google Calendar API integration
 // Export CLIENT_ID for use in other components
@@ -17,21 +20,34 @@ export async function initGoogleCalendar(): Promise<void> {
     // REMOVED: const token = window.google?.accounts?.oauth2?.getToken(); - This was causing the error.
     // The token is handled by the GIS library and applied to gapi.client after user connects.
 
-    if (isInitialized) {
-      // If GAPI client scripts are loaded and gapi.client.init has been called.
-      // We don't need to re-set the token here; it's set after connection.
-      // The main purpose of re-calling initGoogleCalendar might be to ensure gapi is on window.
-      if (window.gapi && window.gapi.client) {
-         console.log("Google Calendar API already initialized.");
-         return resolve();
-      } else {
-         // Should not happen if isInitialized is true, but as a fallback:
-         isInitialized = false; // Force re-initialization
-         console.warn("Google Calendar API: isInitialized was true, but gapi.client is missing. Re-initializing.");
+    if (isInitialized && window.gapi && window.gapi.client) {
+      console.log("Google Calendar GAPI client core already initialized.");
+      // If core is initialized, try to set token if not already attempted this session
+      if (!isTokenSetAttempted && window.gapi?.client?.setToken) { // Check for setToken
+          const storedTokenString = localStorage.getItem(GOOGLE_TOKEN_STORAGE_KEY);
+          if (storedTokenString) {
+              try {
+                  const token = JSON.parse(storedTokenString); // This is the full token object
+                  if (token && token.access_token) {
+                      // TODO: Add expiry check here if expires_in or similar is stored
+                      window.gapi.client.setToken(token); // Pass the whole token object
+                      console.log("Google Calendar: Restored token object from localStorage on re-init.");
+                  } else {
+                      console.warn("Google Calendar: Invalid token structure in localStorage.");
+                      localStorage.removeItem(GOOGLE_TOKEN_STORAGE_KEY);
+                  }
+              } catch (e) {
+                  console.error("Google Calendar: Failed to parse stored token:", e);
+                  localStorage.removeItem(GOOGLE_TOKEN_STORAGE_KEY);
+              }
+          }
+          isTokenSetAttempted = true; // Mark that we've attempted to set the token
       }
+      return resolve();
     }
-
-    // If not initialized, proceed with loading scripts and GAPI client init.
+    // If not initialized, or gapi.client is missing, proceed with full initialization.
+    isInitialized = false; // Ensure full re-initialization if something was amiss
+    isTokenSetAttempted = false;
     // Load Google Identity Services script
     const loadGisScript = () => {
       return new Promise((resolveScript, rejectScript) => {
@@ -93,11 +109,31 @@ export async function initGoogleCalendar(): Promise<void> {
       // At this point, gapi.client is initialized with apiKey and discoveryDocs.
       // It does NOT have an access token yet. The token is set after the user
       // successfully connects via GoogleCalendarSetup.tsx -> handleConnect -> callback.
-      isInitialized = true;
       console.log("Google Calendar GAPI client core initialized (apiKey and discoveryDocs set).");
-      console.log("Access token will be set after user connects via OAuth flow.");
+
+      // Attempt to load and set token from localStorage immediately after core init
+      const storedTokenString = localStorage.getItem(GOOGLE_TOKEN_STORAGE_KEY);
+      if (storedTokenString) {
+        try {
+          const token = JSON.parse(storedTokenString);
+          if (token && token.access_token) {
+            // TODO: Add expiry check here if expires_in or similar is stored
+            // For now, just set it. The API call will fail if it's truly expired.
+            window.gapi.client.setToken(token);
+            console.log("Google Calendar: Restored access token from localStorage post-init.");
+          } else {
+            console.warn("Google Calendar: Invalid token structure in localStorage during init.");
+            localStorage.removeItem(GOOGLE_TOKEN_STORAGE_KEY); // Clean up invalid item
+          }
+        } catch (e) {
+          console.error("Google Calendar: Failed to parse stored token during init:", e);
+          localStorage.removeItem(GOOGLE_TOKEN_STORAGE_KEY); // Clean up corrupted item
+        }
+      }
+      isTokenSetAttempted = true; // Mark that we've attempted to set the token
+      isInitialized = true;
+      console.log("Access token (if found in storage) has been applied. Otherwise, it will be set after user connects via OAuth flow.");
       resolve();
-      // We no longer try to set a token here, as it's not available at this stage of pure initialization.
     };
 
     // Execute the sequence
