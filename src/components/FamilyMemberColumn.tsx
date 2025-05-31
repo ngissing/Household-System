@@ -145,7 +145,7 @@ export default function FamilyMemberColumn({
                         return null;
                       })()}
                       <p
-                        className={`font-medium truncate ${
+                        className={`font-medium ${
                           chore.completed ? 'opacity-90' : '' // Slightly dim completed text
                         }`}
                       >
