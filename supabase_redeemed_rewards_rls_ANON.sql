@@ -5,6 +5,10 @@ ALTER TABLE public.redeemed_rewards ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow anonymous insert access on redeemed_rewards" ON public.redeemed_rewards;
 DROP POLICY IF EXISTS "Allow authenticated insert access on redeemed_rewards" ON public.redeemed_rewards;
 DROP POLICY IF EXISTS "Allow individual insert access" ON public.redeemed_rewards; -- Drop example policy if used
+ 
+-- Grant INSERT and SELECT permissions to the anon role on the redeemed_rewards table
+GRANT INSERT, SELECT ON public.redeemed_rewards TO anon;
+
 
 -- Allow anonymous users to insert into redeemed_rewards
 -- IMPORTANT: This allows ANY frontend user to log a redemption for ANY member.

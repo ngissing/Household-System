@@ -63,7 +63,55 @@ export default function GamificationDashboard() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'redeemed_rewards' },
-        () => { fetchUnclearedRedemptions(); }
+        (payload: any) => { // Supabase RealtimePayload
+          console.log('Redeemed rewards change:', payload);
+          const { eventType, new: newRecord, old: oldRecord } = payload;
+
+          // Helper to create UnclearedRedemption object from a record
+          const toUnclearedRedemption = (record: any): UnclearedRedemption | null => {
+            if (!record || typeof record.id === 'undefined') return null;
+            return {
+              id: record.id,
+              reward_id: record.reward_id,
+              member_id: record.member_id,
+            };
+          };
+
+          if (eventType === 'INSERT') {
+            const newUncleared = toUnclearedRedemption(newRecord);
+            if (newUncleared && newRecord.is_cleared === false) {
+              setUnclearedRedemptions(prev => {
+                if (prev.find(r => r.id === newUncleared.id)) return prev; // Avoid duplicates
+                return [...prev, newUncleared];
+              });
+            }
+          } else if (eventType === 'UPDATE') {
+            const updatedRecord = toUnclearedRedemption(newRecord);
+            if (updatedRecord) {
+              if (newRecord.is_cleared === true) {
+                // If updated to be cleared, remove from unclearedRedemptions
+                setUnclearedRedemptions(prev => prev.filter(r => r.id !== updatedRecord.id));
+              } else if (newRecord.is_cleared === false) {
+                // If updated to be not cleared, add/update it
+                setUnclearedRedemptions(prev => {
+                  const existingIndex = prev.findIndex(r => r.id === updatedRecord.id);
+                  if (existingIndex !== -1) {
+                    const newState = [...prev];
+                    newState[existingIndex] = updatedRecord;
+                    return newState;
+                  }
+                  return [...prev, updatedRecord];
+                });
+              }
+            }
+          } else if (eventType === 'DELETE') {
+            // If deleted, remove from unclearedRedemptions
+            // Ensure oldRecord and oldRecord.id exist before trying to access id
+            if (oldRecord && typeof oldRecord.id !== 'undefined') {
+                 setUnclearedRedemptions(prev => prev.filter(r => r.id !== oldRecord.id));
+            }
+          }
+        }
       )
       .subscribe();
 
@@ -351,18 +399,41 @@ export default function GamificationDashboard() {
 
       // Handle 'Donate / Give' differently: mark as cleared, don't delete assignment
       if (reward_id === null) { // Check for null reward_id for Donate/Give
+        console.log(`Attempting to clear 'Donate / Give' with redeemedRewardId: ${redeemedRewardId}`);
            try {
-               const { error: updateError } = await supabase
+               const { error: updateError, data: updateData } = await supabase
                    .from("redeemed_rewards")
                    .update({ is_cleared: true })
-                   .eq("id", redeemedRewardId);
-               if (updateError) throw updateError;
+                   .eq("id", redeemedRewardId)
+                   .select(); // Request the updated row(s) to see what happened
+
+               console.log('Donate/Give clear update attempt result:', { updateError, updateData });
+
+               if (updateError) {
+                  console.error("Supabase update error object for Donate/Give:", JSON.stringify(updateError, null, 2));
+                  throw updateError; // Propagate to catch block
+               }
+
+               if (!updateData || updateData.length === 0) {
+                   console.warn(`No rows updated for Donate/Give redeemedRewardId: ${redeemedRewardId}. Was it already cleared or deleted?`);
+                   // Still attempt to clear from local state as it might have been there
+               } else {
+                   console.log(`Successfully updated is_cleared for Donate/Give redeemedRewardId: ${redeemedRewardId}`, updateData);
+               }
+
                // Update local state
                setUnclearedRedemptions(prev => prev.filter(r => r.id !== redeemedRewardId));
-               console.log("Cleared 'Donate / Give' redemption status.");
-           } catch(error) {
-                console.error("Error clearing 'Donate / Give' redemption:", error);
-                alert("Failed to clear 'Donate / Give' status.");
+               console.log("Locally cleared 'Donate / Give' redemption status.");
+
+           } catch(error: any) {
+                console.error("Error in catch block while clearing 'Donate / Give' redemption:", error);
+                if (error && error.message) {
+                  console.error("Error message:", error.message);
+                  if (error.details) console.error("Error details:", error.details);
+                  if (error.hint) console.error("Error hint:", error.hint);
+                  if (error.code) console.error("Error code:", error.code);
+                }
+                alert("Failed to clear 'Donate / Give' status. Please check the browser console for more details.");
            }
           return;
       }
