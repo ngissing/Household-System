@@ -32,14 +32,19 @@ import { addDays, addWeeks, addMonths, isSameDay, isBefore, isAfter, startOfDay 
 //   }[];
 // }
 
-export default function ChoreManager() {
+interface ChoreManagerProps {
+  timeOfDay: "morning" | "afternoon";
+  selectedDate: Date;
+  setSelectedDate: (date: Date) => void;
+}
+
+export default function ChoreManager({ timeOfDay, selectedDate, setSelectedDate }: ChoreManagerProps) {
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [chores, setChores] = useState<Chore[]>([]);
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   // const [showCalendar, setShowCalendar] = useState(false); // Remove this
   const [isCalendarDialogOpen, setIsCalendarDialogOpen] = useState(false); // New state for dialog
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [tempSelectedDate, setTempSelectedDate] = useState<Date>(new Date()); // New state for dialog's calendar
+  const [tempSelectedDate, setTempSelectedDate] = useState<Date>(selectedDate); // New state for dialog's calendar
   const [calendarEvents, setCalendarEvents] = useState<
     { date: Date; count: number }[]
   >([]);
@@ -130,14 +135,24 @@ export default function ChoreManager() {
 
     try {
       // 1. Fetch ALL chore records (base, non-recurring, completed instances) potentially relevant
-      const { data: allChoresData, error: initialFetchError } = await supabase
-        .from("chores")
-        .select("*, routines ( color ), icon") // Added icon
-        // Fetch base templates OR any instance within the date range
-        .or(`original_chore_id.is.null,and(due_date.gte.${startOfDayIso},due_date.lte.${endOfDayIso})`);
-
+      // 1. Fetch ALL chore records (base, non-recurring, completed instances) potentially relevant
+      // AND all deleted recurring chore records for the target date
+      const [
+        { data: allChoresData, error: initialFetchError },
+        { data: deletedRecurringChores, error: deletedChoresError }
+      ] = await Promise.all([
+        supabase
+          .from("chores")
+          .select("*, routines ( color ), icon")
+          .or(`original_chore_id.is.null,and(due_date.gte.${startOfDayIso},due_date.lte.${endOfDayIso})`),
+        supabase
+          .from("deleted_recurring_chores")
+          .select("original_chore_id, deleted_for_date")
+          .eq("deleted_for_date", format(targetDate, 'yyyy-MM-dd'))
+      ]);
 
       if (initialFetchError) throw initialFetchError;
+      if (deletedChoresError) throw deletedChoresError;
       const allFetchedChores = allChoresData || [];
 
       // Separate base templates from actual instances for the target date
@@ -161,6 +176,8 @@ export default function ChoreManager() {
 
       // 3. (Renumbered) Generate *pending* instances for recurring chores IF a completed one doesn't already exist
       const generatedRecurringInstances: Chore[] = [];
+      const deletedOriginalChoreIds = new Set(deletedRecurringChores?.map(d => d.original_chore_id));
+
       recurringBases.forEach((baseChore) => {
         // Basic validation
         if (!baseChore.recurrence_unit || baseChore.recurrence_frequency == null || !baseChore.due_date) {
@@ -187,16 +204,17 @@ export default function ChoreManager() {
             );
 
             // Only generate a PENDING instance if no COMPLETED one exists for this day
-            if (!completedInstanceExists) {
+            const isDeleted = deletedOriginalChoreIds.has(baseChore.id);
+
+            if (!completedInstanceExists && !isDeleted) {
                generatedRecurringInstances.push({
                  ...baseChore,
-                 // Use consistent yyyy-MM-dd format for the temporary ID date part
                  id: `${baseChore.id}-${format(targetDate, 'yyyy-MM-dd')}`,
-                 due_date: targetDate.toISOString(), // Keep ISO string for initial display/state if needed
+                 due_date: targetDate.toISOString(),
                  status: 'pending',
-                 original_chore_id: baseChore.id, // Link back to base
-                 is_recurring: false, // Mark as a generated instance, not the template
-                 icon: baseChore.icon, // Carry over icon
+                 original_chore_id: baseChore.id,
+                 is_recurring: false,
+                 icon: baseChore.icon,
                });
             }
             break; // Found potential instance for this date, move to next base chore
@@ -328,6 +346,7 @@ export default function ChoreManager() {
           recurrence_end_date: data.isRecurring ? data.recurrence?.endDate?.toISOString() : null,
           original_chore_id: null, // Base recurring chores have null original_id initially
           icon: data.icon || null, // Add icon here
+          time_of_day: data.time_of_day || 'all_day',
         };
         return baseChoreData;
       });
@@ -549,6 +568,48 @@ export default function ChoreManager() {
         alert("Failed to update chore status. Please try again.");
     }
   };
+const handleDeleteChore = async (id: string) => {
+  const choreToDelete = chores.find((c) => c.id === id);
+  if (!choreToDelete) return;
+
+  // Optimistically remove the chore from the local state
+  setChores((prevChores) => prevChores.filter((chore) => chore.id !== id));
+
+  try {
+    const idParts = id.split('-');
+    const isGeneratedInstance = idParts.length > 5 && !isNaN(Date.parse(idParts.slice(5).join('-')));
+
+    if (isGeneratedInstance) {
+      const originalChoreId = idParts.slice(0, 5).join('-');
+      const deletedForDate = format(selectedDate, 'yyyy-MM-dd');
+
+      const { error } = await supabase
+        .from("deleted_recurring_chores")
+        .insert({ original_chore_id: originalChoreId, deleted_for_date: deletedForDate });
+
+      if (error) {
+        console.error("Error marking recurring chore as deleted:", error);
+        fetchChores(selectedDate); // Revert
+      } else {
+        console.log("Successfully marked recurring chore as deleted for today:", id);
+      }
+    } else {
+      // It's a regular, non-recurring chore or a materialized recurring instance
+      const { error } = await supabase.from("chores").delete().eq("id", id);
+
+      if (error) {
+        console.error("Error deleting chore from database:", error);
+        fetchChores(selectedDate); // Revert
+      } else {
+        console.log("Successfully deleted chore from database:", id);
+        updateCalendarEvents();
+      }
+    }
+  } catch (error) {
+    console.error("An unexpected error occurred during chore deletion:", error);
+    fetchChores(selectedDate); // Revert to be safe
+  }
+};
 
   const handleOpenCalendarDialog = () => {
     setTempSelectedDate(selectedDate); // Initialize dialog calendar with current selected date
@@ -599,7 +660,12 @@ export default function ChoreManager() {
       {/* Allow wrapping and adjust gap/padding for better fitting */}
       <div className="flex flex-wrap gap-6 pb-6 justify-center">
         {familyMembers.map((member) => {
-          const memberChores = chores.filter(
+          const filteredChores = chores.filter(chore => {
+            // Show chores that match the time of day, are 'all_day', or have no time_of_day set
+            return chore.time_of_day === timeOfDay || chore.time_of_day === 'all_day' || !chore.time_of_day;
+          });
+
+          const memberChores = filteredChores.filter(
             (chore) => chore.assigned_to === member.id,
           );
           const completedCount = memberChores.filter(
@@ -627,6 +693,7 @@ export default function ChoreManager() {
               totalChores={memberChores.length}
               totalPoints={member.points} // Pass total points
               onChoreComplete={handleCompleteChore}
+              onDeleteChore={handleDeleteChore}
             />
           );
         })}

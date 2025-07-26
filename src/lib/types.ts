@@ -27,6 +27,7 @@ export interface Chore {
   // routine_color?: string | null; // Remove this, color comes via join
   routines?: { color: string | null } | null; // Add nested routines object from join
   icon?: string | null; // Added for chore icon
+  time_of_day?: "morning" | "afternoon" | "all_day";
 }
 
 // Add Routine type definition
@@ -58,6 +59,7 @@ description?: string; // Add optional description
     endDate?: Date;
   };
   icon?: string; // Added for chore icon
+  time_of_day?: "morning" | "afternoon" | "all_day";
 }
 
 // Interface for Rewards

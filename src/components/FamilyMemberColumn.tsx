@@ -6,6 +6,7 @@ import { CheckCircle2, Circle, Star, icons as LucideIcons, LucideProps } from "l
 import { Progress } from "./ui/progress";
 import { formatPointsAsDollars } from "@/lib/utils"; // Import the formatter
 import React from "react"; // Import React
+import ChoreCard from "./ChoreCard";
 
 interface Chore {
   id: string;
@@ -26,6 +27,7 @@ interface FamilyMemberColumnProps {
   totalChores: number;
   totalPoints: number; // Add totalPoints prop
   onChoreComplete: (choreId: string) => void;
+  onDeleteChore: (choreId: string) => void;
   memberColor?: string; // Add memberColor prop
 }
 
@@ -38,6 +40,7 @@ export default function FamilyMemberColumn({
   onChoreComplete,
   memberColor, // Destructure memberColor
   totalPoints, // Destructure totalPoints
+  onDeleteChore,
 }: FamilyMemberColumnProps) {
  // Confetti handler
   const handleCompleteClick = (choreId: string) => {
@@ -120,57 +123,13 @@ export default function FamilyMemberColumn({
             )}
             <div className="space-y-2">
               {routineChores.map((chore) => (
-                <button
+                <ChoreCard
                   key={chore.id}
-                  onClick={() => handleCompleteClick(chore.id)}
-                  className={`group w-full text-left rounded-xl p-4 transition-colors flex items-center gap-3 ${ // Increased padding slightly
-                    chore.completed
-                      ? 'text-white' // White text for completed
-                      : 'bg-white border border-gray-200 hover:bg-gray-50' // White bg, border for pending
-                  }`}
-                  style={{
-                    backgroundColor: chore.completed ? memberColor || 'hsl(var(--primary))' : undefined, // Member color bg if completed
-                    borderColor: !chore.completed ? memberColor || 'hsl(var(--border))' : undefined, // Member color border if pending
-                    color: chore.completed ? '#ffffff' : undefined // Ensure text color contrasts
-                  }}
-                >
-                  {/* Chore Title & Points */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center"> {/* Wrapper for icon and title */}
-                      {chore.icon && (() => {
-                        const IconComponent = LucideIcons[chore.icon as keyof typeof LucideIcons] as React.FC<LucideProps>;
-                        if (IconComponent) {
-                          return <IconComponent className={`h-4 w-4 mr-2 ${chore.completed ? 'text-white/90' : 'text-primary'}`} />;
-                        }
-                        return null;
-                      })()}
-                      <p
-                        className={`font-medium ${
-                          chore.completed ? 'opacity-90' : '' // Slightly dim completed text
-                        }`}
-                      >
-                        {chore.title}
-                      </p>
-                    </div>
-                    {/* Display Points */}
-                    <div className={`flex items-center gap-1 text-xs mt-0.5 ${chore.completed ? 'text-white/70' : 'text-muted-foreground'}`}>
-                       <Star className="h-3 w-3" />
-                       <span>{formatPointsAsDollars(chore.points)}</span>
-                    </div>
-                  </div>
-
-                  {/* Completion Icon (Right Side) */}
-                  <div className="flex-shrink-0">
-                    {chore.completed ? (
-                      <CheckCircle2 className="h-6 w-6 text-white/90" /> // White check for completed
-                    ) : (
-                      <Circle
-                        className="h-6 w-6 text-gray-300 group-hover:text-[--member-color]" // Use CSS var for hover
-                        style={{ '--member-color': memberColor } as React.CSSProperties}
-                      /> // Circle for pending, hover color
-                    )}
-                  </div>
-                </button>
+                  chore={chore}
+                  memberColor={memberColor}
+                  onCompleteChore={handleCompleteClick}
+                  onDeleteChore={onDeleteChore}
+                />
               ))}
             </div>
           </div>

@@ -69,6 +69,7 @@ export default function AddChoreDialog({
   const [showRecurrenceEndDate, setShowRecurrenceEndDate] = useState(false);
   const [iconName, setIconName] = useState(""); // Add state for icon name
   const [suggestedIcons, setSuggestedIcons] = useState<string[]>([]); // State for suggestions
+  const [timeOfDay, setTimeOfDay] = useState<"morning" | "afternoon" | "all_day">("all_day");
 
   // Reset state when dialog closes
   useEffect(() => {
@@ -85,6 +86,7 @@ export default function AddChoreDialog({
       setShowRecurrenceEndDate(false);
       setIconName(""); // Reset icon name
       setSuggestedIcons([]); // Reset suggestions
+      setTimeOfDay("all_day");
     }
   }, [open]);
 
@@ -132,6 +134,7 @@ export default function AddChoreDialog({
       points,
       isRecurring,
       icon: iconName || undefined, // Add icon to data object, make undefined if empty
+      time_of_day: timeOfDay,
     };
 
     if (isRecurring) {
@@ -254,7 +257,22 @@ export default function AddChoreDialog({
                </PopoverContent>
              </Popover>
            </div>
-
+ 
+           {/* Time of Day Selection */}
+           <div className="space-y-1">
+             <Label htmlFor="time-of-day">Time of Day</Label>
+             <Select value={timeOfDay} onValueChange={(v) => setTimeOfDay(v as "morning" | "afternoon" | "all_day")}>
+               <SelectTrigger id="time-of-day">
+                 <SelectValue placeholder="Select time of day" />
+               </SelectTrigger>
+               <SelectContent>
+                 <SelectItem value="all_day">All Day</SelectItem>
+                 <SelectItem value="morning">Morning</SelectItem>
+                 <SelectItem value="afternoon">Afternoon</SelectItem>
+               </SelectContent>
+             </Select>
+           </div>
+ 
           {/* Assign To */}
           <div className="space-y-1">
             <Label>Assign to: <span className="text-muted-foreground text-sm">{getSelectedMemberNames()}</span></Label>

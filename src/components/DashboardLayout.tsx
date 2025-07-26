@@ -16,6 +16,11 @@ export default function DashboardLayout() {
   const [activeTab, setActiveTab] = useState("chores");
   // Removed isSettingsUnlocked state
   const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
+  const [timeOfDay, setTimeOfDay] = useState<"morning" | "afternoon">(() => {
+    const hour = new Date().getHours();
+    return hour >= 12 ? "afternoon" : "morning";
+  });
+  const [selectedDate, setSelectedDate] = useState(new Date());
 
   // Removed useEffect for initial lock check
 
@@ -98,7 +103,26 @@ export default function DashboardLayout() {
           </TabsList>
 
           <TabsContent value="chores" className="space-y-4">
-            <ChoreManager />
+            <Tabs value={timeOfDay} onValueChange={(value) => setTimeOfDay(value as "morning" | "afternoon")} className="space-y-4">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="morning">Morning</TabsTrigger>
+                <TabsTrigger value="afternoon">Afternoon</TabsTrigger>
+              </TabsList>
+              <TabsContent value="morning">
+                <ChoreManager
+                  timeOfDay="morning"
+                  selectedDate={selectedDate}
+                  setSelectedDate={setSelectedDate}
+                />
+              </TabsContent>
+              <TabsContent value="afternoon">
+                <ChoreManager
+                  timeOfDay="afternoon"
+                  selectedDate={selectedDate}
+                  setSelectedDate={setSelectedDate}
+                />
+              </TabsContent>
+            </Tabs>
           </TabsContent>
 
           <TabsContent value="calendar" className="space-y-4"> {/* Added Calendar tab content */}

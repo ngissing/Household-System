@@ -1,103 +1,90 @@
-import { Check, Clock, Star, icons, LucideProps } from "lucide-react"; // Import icons and LucideProps
-import confetti from "canvas-confetti";
-import { Button } from "./ui/button";
-import { Card } from "./ui/card";
-import { formatPointsAsDollars } from "@/lib/utils"; // Import the formatter
-import React from "react"; // Import React for dynamic component rendering
+import { motion } from "framer-motion";
+import { CheckCircle2, Circle, Star, icons as LucideIcons, LucideProps } from "lucide-react";
+import { formatPointsAsDollars } from "@/lib/utils";
+import React from "react";
 
-interface ChoreCardProps {
+interface Chore {
   id: string;
   title: string;
-  description?: string;
-  assignedTo: string;
+  routineId?: string;
+  routineTitle?: string;
+  completed: boolean;
   points: number;
-  dueDate: string;
-  status: "pending" | "completed";
-  onComplete?: (id: string) => void;
-  icon?: string | null; // Add icon prop
+  routineColor?: string;
+  icon?: string | null;
 }
 
-export default function ChoreCard({
-  id,
-  title,
-  description,
-  assignedTo,
-  points,
-  dueDate,
-  status,
-  onComplete,
-  icon, // Destructure icon
-}: ChoreCardProps) {
+interface ChoreCardProps {
+  chore: Chore;
+  memberColor?: string;
+  onCompleteChore: (choreId: string) => void;
+  onDeleteChore: (choreId: string) => void;
+}
 
-  const renderIcon = () => {
-    if (!icon) return null;
-    const LucideIcon = icons[icon as keyof typeof icons] as React.FC<LucideProps>;
-    if (!LucideIcon) {
-      console.warn(`Icon "${icon}" not found in lucide-react`);
-      return null; // Or a default icon
-    }
-    return <LucideIcon className="h-6 w-6 mr-2 text-primary" />; // Added text-primary for color
-  };
-
-  // Confetti handler
-  const handleComplete = () => {
-    if (onComplete) {
-      onComplete(id);
-      // Trigger confetti!
-      confetti({
-        particleCount: 150,
-        spread: 70,
-        origin: { y: 0.6 },
-        zIndex: 1000, // Ensure it's above other elements
-      });
-    }
+const ChoreCard: React.FC<ChoreCardProps> = ({ chore, memberColor, onCompleteChore, onDeleteChore }) => {
+  const handleDelete = () => {
+    onDeleteChore(chore.id);
   };
 
   return (
-    <Card className="p-6 hover:shadow-lg transition-shadow rounded-lg"> {/* Increased padding, shadow, rounding */}
-      <div className="flex items-start justify-between gap-6"> {/* Increased gap */}
-        <div className="flex-1">
-          <div className="flex items-center"> {/* Wrapper for title and icon */}
-            {renderIcon()}
-            <h3 className="font-semibold text-xl">{title}</h3> {/* Increased font size */}
+    <motion.div
+      layout
+      initial={{ scale: 1 }}
+      exit={{ scale: 0.8, opacity: 0 }}
+      transition={{ type: "spring" }}
+      drag="x"
+      dragConstraints={{ left: 0, right: 0 }}
+      onDragEnd={(event, info) => {
+        if (info.offset.x < -100) {
+          handleDelete();
+        }
+      }}
+      className="relative"
+    >
+      <button
+        onClick={() => onCompleteChore(chore.id)}
+        className={`group w-full text-left rounded-xl p-4 transition-colors flex items-center gap-3 ${
+          chore.completed
+            ? 'text-white'
+            : 'bg-white border border-gray-200 hover:bg-gray-50'
+        }`}
+        style={{
+          backgroundColor: chore.completed ? memberColor || 'hsl(var(--primary))' : undefined,
+          borderColor: !chore.completed ? memberColor || 'hsl(var(--border))' : undefined,
+          color: chore.completed ? '#ffffff' : undefined
+        }}
+      >
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center">
+            {chore.icon && (() => {
+              const IconComponent = LucideIcons[chore.icon as keyof typeof LucideIcons] as React.FC<LucideProps>;
+              if (IconComponent) {
+                return <IconComponent className={`h-4 w-4 mr-2 ${chore.completed ? 'text-white/90' : 'text-primary'}`} />;
+              }
+              return null;
+            })()}
+            <p className={`font-medium ${chore.completed ? 'opacity-90' : ''}`}>
+              {chore.title}
+            </p>
           </div>
-          {description && (
-            <p className="text-base text-muted-foreground mt-2">{description}{/* Increased font size and margin */}</p>
-          )}
-          <div className="flex items-center gap-4 mt-3"> {/* Increased margin */}
-            <span className="text-base text-muted-foreground flex items-center gap-1.5"> {/* Increased font size and gap */}
-              <Clock className="h-5 w-5" /> {/* Increased icon size */}
-              {new Date(dueDate).toLocaleDateString()}
-            </span>
-            <span className="text-base text-muted-foreground"> {/* Increased font size */}
-              Assigned to: {assignedTo}
-            </span>
+          <div className={`flex items-center gap-1 text-xs mt-0.5 ${chore.completed ? 'text-white/70' : 'text-muted-foreground'}`}>
+            <Star className="h-3 w-3" />
+            <span>{formatPointsAsDollars(chore.points)}</span>
           </div>
         </div>
-
-        <div className="flex flex-col items-end gap-3"> {/* Increased gap */}
-          <div className="flex items-center gap-1.5 bg-primary/10 text-primary px-4 py-1.5 rounded-full text-base">
-            <Star className="h-5 w-5" />
-            <span>{formatPointsAsDollars(points)}</span>
-          </div>
-          {status === "pending" && onComplete && (
-            <Button
-              variant="outline"
-              size="lg" // Increased button size
-              className="gap-2 text-lg font-semibold border-2 border-primary hover:bg-primary/10" // Increased gap, font size, added border
-              onClick={handleComplete} // Use new handler
-            >
-              <Check className="h-5 w-5" /> {/* Increased icon size */}
-              Complete! 🎉
-            </Button>
-          )}
-          {status === "completed" && (
-            <span className="text-green-700 bg-green-100 px-4 py-1.5 rounded-full text-base font-medium"> {/* Increased padding, font size/weight */}
-              Done! ✨
-            </span>
+        <div className="flex-shrink-0">
+          {chore.completed ? (
+            <CheckCircle2 className="h-6 w-6 text-white/90" />
+          ) : (
+            <Circle
+              className="h-6 w-6 text-gray-300 group-hover:text-[--member-color]"
+              style={{ '--member-color': memberColor } as React.CSSProperties}
+            />
           )}
         </div>
-      </div>
-    </Card>
+      </button>
+    </motion.div>
   );
-}
+};
+
+export default ChoreCard;

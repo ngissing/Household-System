@@ -26,6 +26,7 @@ interface AddRoutineDialogProps {
     assignedTo: string;
     chores: { title: string; points: number }[];
     color?: string; // Add color to the prop type (optional for now)
+    time_of_day?: "morning" | "afternoon" | "all_day";
   }) => void;
   familyMembers: Array<{ id: string; name: string }>;
 }
@@ -42,6 +43,7 @@ export default function AddRoutineDialog({
   const [newChoreTitle, setNewChoreTitle] = useState("");
   const [newChorePoints, setNewChorePoints] = useState("");
   const [color, setColor] = useState("#ffffff"); // Add state for color, default to white
+  const [timeOfDay, setTimeOfDay] = useState<"morning" | "afternoon" | "all_day">("all_day");
 
   const handleAddChore = () => {
     if (!newChoreTitle || !newChorePoints) return;
@@ -88,6 +90,7 @@ export default function AddRoutineDialog({
         routine_template: true,
         status: "pending",
         due_date: new Date().toISOString(),
+        time_of_day: timeOfDay,
       }));
 
       const { error: choresError } = await supabase
@@ -103,6 +106,7 @@ export default function AddRoutineDialog({
         assignedTo,
         chores,
         color, // Pass color back (optional)
+        time_of_day: timeOfDay,
       });
 
       // Reset form
@@ -112,6 +116,7 @@ export default function AddRoutineDialog({
       setAssignedTo("");
       setChores([]);
       setColor("#ffffff"); // Reset color state
+      setTimeOfDay("all_day");
     } catch (error) {
       console.error("Error creating routine:", error);
     }
@@ -175,7 +180,21 @@ export default function AddRoutineDialog({
             />
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="time-of-day">Time of Day</Label>
+            <Select value={timeOfDay} onValueChange={(v) => setTimeOfDay(v as "morning" | "afternoon" | "all_day")}>
+              <SelectTrigger id="time-of-day">
+                <SelectValue placeholder="Select time of day" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all_day">All Day</SelectItem>
+                <SelectItem value="morning">Morning</SelectItem>
+                <SelectItem value="afternoon">Afternoon</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+         <div className="space-y-4">
             <Label>Chores in Routine</Label>
             <div className="flex gap-2">
               <Input
